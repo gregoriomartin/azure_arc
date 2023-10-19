@@ -503,6 +503,7 @@ Write-Host "INFO: GitHub repo configuration complete!" -ForegroundColor Green
 Write-Host
 
 # Download DataEmulator.zip into Agora folder and unzip
+$dataEmulatorDir = $AgConfig.AgDirectories["AgDataEmulator"]
 $emulatorPath = "$dataEmulatorDir\DataEmulator.zip"
 Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/data_emulator/DataEmulator.zip" -OutFile $emulatorPath
 
