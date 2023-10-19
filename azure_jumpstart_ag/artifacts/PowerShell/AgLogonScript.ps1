@@ -502,23 +502,6 @@ foreach ($branch in $branches) {
 Write-Host "INFO: GitHub repo configuration complete!" -ForegroundColor Green
 Write-Host
 
-### BELOW IS AN ALTERNATIVE APPROACH TO IMPORT DASHBOARD USING README INSTRUCTIONS
-$adxDashBoardsDir = $AgConfig.AgDirectories["AgAdxDashboards"]
-$dataEmulatorDir = $AgConfig.AgDirectories["AgDataEmulator"]
-$kustoCluster = Get-AzKustoCluster -ResourceGroupName $resourceGroup -Name $adxClusterName
-if ($null -ne $kustoCluster) {
-    $adxEndPoint = $kustoCluster.Uri
-    if ($null -ne $adxEndPoint -and $adxEndPoint -ne "") {
-        $ordersDashboardBody = (Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/adx_dashboards/adx-dashboard-orders-payload.json").Content -replace '{{ADX_CLUSTER_URI}}', $adxEndPoint
-        Set-Content -Path "$adxDashBoardsDir\adx-dashboard-orders-payload.json" -Value $ordersDashboardBody -Force -ErrorAction Ignore
-        $iotSensorsDashboardBody = (Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/adx_dashboards/adx-dashboard-iotsensor-payload.json") -replace '{{ADX_CLUSTER_URI}}', $adxEndPoint
-        Set-Content -Path "$adxDashBoardsDir\adx-dashboard-iotsensor-payload.json" -Value $iotSensorsDashboardBody -Force -ErrorAction Ignore
-    }
-    else {
-        Write-Host "[$(Get-Date -Format t)] ERROR: Unable to find Azure Data Explorer endpoint from the cluster resource in the resource group."
-    }
-}
-
 # Download DataEmulator.zip into Agora folder and unzip
 $emulatorPath = "$dataEmulatorDir\DataEmulator.zip"
 Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/data_emulator/DataEmulator.zip" -OutFile $emulatorPath
