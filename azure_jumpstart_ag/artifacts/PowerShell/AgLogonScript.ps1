@@ -739,7 +739,18 @@ Invoke-Command -VMName $VMnames -Credential $Credentials -ScriptBlock {
     $AdapterName = (Get-NetAdapter -Name Ethernet*).Name
     $namingGuid = $using:namingGuid
     $arcClusterName = $AgConfig.SiteConfig[$Env:COMPUTERNAME].ArcClusterName + "-$namingGuid"
+
+    # Fetch schemaVersion release from the AgConfig file
+    $AKSEESchemaVersionUseLatest = $AgConfig.SiteConfig[$Env:COMPUTERNAME].AKSEEReleaseUseLatest
+    if($AKSEESchemaVersionUseLatest){
+        $SchemaVersion = $using:AKSEESchemaVersions[0]
+    }
+    else {
+        $SchemaVersion = $using:AKSEESchemaVersions[1]
+    }
+
     $replacementParams = @{
+        "SchemaVersion-null"          = $SchemaVersion
         "ServiceIPRangeStart-null"    = $AgConfig.SiteConfig[$Env:COMPUTERNAME].ServiceIPRangeStart
         "1000"                        = $AgConfig.SiteConfig[$Env:COMPUTERNAME].ServiceIPRangeSize
         "ControlPlaneEndpointIp-null" = $AgConfig.SiteConfig[$Env:COMPUTERNAME].ControlPlaneEndpointIp
