@@ -23,12 +23,9 @@ $spnClientSecret    = $Env:spnClientSecret
 $spnTenantId        = $Env:spnTenantId
 $adminUsername      = $Env:adminUsername
 $acrName            = $Env:acrName.ToLower()
-$cosmosDBName       = $Env:cosmosDBName
-$cosmosDBEndpoint   = $Env:cosmosDBEndpoint
 $templateBaseUrl    = $Env:templateBaseUrl
 $appClonedRepo      = "https://github.com/$githubUser/jumpstart-agora-apps"
 $appUpstreamRepo    = "https://github.com/microsoft/jumpstart-agora-apps"
-$adxClusterName     = $Env:adxClusterName
 $namingGuid         = $Env:namingGuid
 $appsRepo           = "jumpstart-agora-apps"
 $adminPassword      = $Env:adminPassword
@@ -422,7 +419,6 @@ do {
 Write-Host "INFO: 'Actions' write permissions verified" -ForegroundColor DarkGreen
 
 write-host "INFO: Creating GitHub secrets" -ForegroundColor Gray
-Write-Host "INFO: Getting Cosmos DB access key" -ForegroundColor Gray
 Write-Host "INFO: Adding GitHub secrets to apps fork" -ForegroundColor Gray
 gh api -X PUT "/repos/$githubUser/$appsRepo/actions/permissions/workflow" -F can_approve_pull_request_reviews=true
 gh repo set-default "$githubUser/$appsRepo"
@@ -430,7 +426,6 @@ gh secret set "SPN_CLIENT_ID" -b $spnClientID
 gh secret set "SPN_CLIENT_SECRET" -b $spnClientSecret
 gh secret set "ACR_NAME" -b $acrName
 gh secret set "PAT_GITHUB" -b $githubPat
-gh secret set "COSMOS_DB_ENDPOINT" -b $cosmosDBEndpoint
 gh secret set "SPN_TENANT_ID" -b $spnTenantId
 
 Write-Host "INFO: Updating ACR name and Cosmos DB endpoint in all branches" -ForegroundColor Gray
@@ -507,46 +502,8 @@ foreach ($branch in $branches) {
 Write-Host "INFO: GitHub repo configuration complete!" -ForegroundColor Green
 Write-Host
 
-#####################################################################
-# Azure IoT Hub resources preparation
-#####################################################################
-Write-Host "[$(Get-Date -Format t)] INFO: Creating Azure IoT resources (Step 5/17)" -ForegroundColor DarkGreen
-if ($githubUser -ne "microsoft") {
-    $iotHubHostName = $Env:iotHubHostName
-    $iotHubName = $iotHubHostName.replace(".azure-devices.net", "")
-    $sites = $AgConfig.SiteConfig.Values
-    Write-Host "[$(Get-Date -Format t)] INFO: Create an Azure IoT device for each site" -ForegroundColor Gray
-    foreach ($site in $sites) {
-        foreach ($device in $site.IoTDevices) {
-            $deviceId = "$device-$($site.FriendlyName)"
-            Add-AzIotHubDevice -ResourceGroupName $resourceGroup -IotHubName $iotHubName -DeviceId $deviceId -EdgeEnabled | Out-File -Append -FilePath ($AgConfig.AgDirectories["AgLogsDir"] + "\IoT.log")
-        }
-    }
-    Write-Host "[$(Get-Date -Format t)] INFO: Azure IoT Hub configuration complete!" -ForegroundColor Green
-    Write-Host
-}
-else {
-    Write-Host "[$(Get-Date -Format t)] ERROR: You have to fork the jumpstart-agora-apps repository!" -ForegroundColor Red
-}
-
-### BELOW IS AN ALTERNATIVE APPROACH TO IMPORT DASHBOARD USING README INSTRUCTIONS
-$adxDashBoardsDir = $AgConfig.AgDirectories["AgAdxDashboards"]
-$dataEmulatorDir = $AgConfig.AgDirectories["AgDataEmulator"]
-$kustoCluster = Get-AzKustoCluster -ResourceGroupName $resourceGroup -Name $adxClusterName
-if ($null -ne $kustoCluster) {
-    $adxEndPoint = $kustoCluster.Uri
-    if ($null -ne $adxEndPoint -and $adxEndPoint -ne "") {
-        $ordersDashboardBody = (Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/adx_dashboards/adx-dashboard-orders-payload.json").Content -replace '{{ADX_CLUSTER_URI}}', $adxEndPoint -replace '{{ADX_CLUSTER_NAME}}', $adxClusterName
-        Set-Content -Path "$adxDashBoardsDir\adx-dashboard-orders-payload.json" -Value $ordersDashboardBody -Force -ErrorAction Ignore
-        $iotSensorsDashboardBody = (Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/adx_dashboards/adx-dashboard-iotsensor-payload.json") -replace '{{ADX_CLUSTER_URI}}', $adxEndPoint -replace '{{ADX_CLUSTER_NAME}}', $adxClusterName
-        Set-Content -Path "$adxDashBoardsDir\adx-dashboard-iotsensor-payload.json" -Value $iotSensorsDashboardBody -Force -ErrorAction Ignore
-    }
-    else {
-        Write-Host "[$(Get-Date -Format t)] ERROR: Unable to find Azure Data Explorer endpoint from the cluster resource in the resource group."
-    }
-}
-
 # Download DataEmulator.zip into Agora folder and unzip
+$dataEmulatorDir = $AgConfig.AgDirectories["AgDataEmulator"]
 $emulatorPath = "$dataEmulatorDir\DataEmulator.zip"
 Invoke-WebRequest -Method Get -Uri "$templateBaseUrl/artifacts/data_emulator/DataEmulator.zip" -OutFile $emulatorPath
 
@@ -751,7 +708,6 @@ Invoke-Command -VMName $VMnames -Credential $Credentials -ScriptBlock {
     $logsFolder = "$deploymentFolder\Logs"
     Start-Transcript -Path $logsFolder\AKSEEBootstrap.log
     $AgConfig = $using:AgConfig
-    $AgToolsDir = $using:AgToolsDir
     $websiteUrls = $using:websiteUrls
 
     ##########################################
@@ -964,7 +920,6 @@ foreach ($cluster in $AgConfig.SiteConfig.GetEnumerator()) {
 # Create secrets for GitHub actions
 #####################################################################
 Write-Host "[$(Get-Date -Format t)] INFO: Creating Kubernetes secrets" -ForegroundColor Gray
-$cosmosDBKey = $(az cosmosdb keys list --name $cosmosDBName --resource-group $resourceGroup --query primaryMasterKey --output tsv)
 foreach ($cluster in $AgConfig.SiteConfig.GetEnumerator()) {
     $clusterName = $cluster.Name.ToLower()
     Write-Host "[$(Get-Date -Format t)] INFO: Creating Kubernetes secrets on $clusterName" -ForegroundColor Gray
@@ -972,7 +927,6 @@ foreach ($cluster in $AgConfig.SiteConfig.GetEnumerator()) {
         if ($namespace -eq "contoso-supermarket" -or $namespace -eq "images-cache"){
             kubectx $cluster.Name.ToLower() | Out-File -Append -FilePath ($AgConfig.AgDirectories["AgLogsDir"] + "\ClusterSecrets.log")
             kubectl create secret generic postgrespw --from-literal=POSTGRES_PASSWORD='Agora123!!' --namespace $namespace | Out-File -Append -FilePath ($AgConfig.AgDirectories["AgLogsDir"] + "\ClusterSecrets.log")
-            kubectl create secret generic cosmoskey --from-literal=COSMOS_KEY=$cosmosDBKey --namespace $namespace | Out-File -Append -FilePath ($AgConfig.AgDirectories["AgLogsDir"] + "\ClusterSecrets.log")
             kubectl create secret generic github-token --from-literal=token=$githubPat --namespace $namespace | Out-File -Append -FilePath ($AgConfig.AgDirectories["AgLogsDir"] + "\ClusterSecrets.log")
         }
     }
@@ -1341,7 +1295,6 @@ foreach ($cluster in $AgConfig.SiteConfig.GetEnumerator()) {
                 foreach ($configMap in $app.value.ConfigMaps.GetEnumerator()){
                     $repoPath     = $configMap.value.RepoPath
                     $configPath   = "$configMapDir\$appPath\config\$($configMap.Name)\$branch"
-                    $iotHubName   = $Env:iotHubHostName.replace(".azure-devices.net", "")
                     $gitHubUser   = $Env:gitHubUser
                     $githubBranch = $Env:githubBranch
 
@@ -1349,23 +1302,6 @@ foreach ($cluster in $AgConfig.SiteConfig.GetEnumerator()) {
 
                     $githubApiUrl = "https://api.github.com/repos/$gitHubUser/$appsRepo/$($repoPath)?ref=$branch"
                     Get-GitHubFiles -githubApiUrl $githubApiUrl -folderPath $configPath
-
-                    # replace the IoT Hub name and the SAS Tokens with the deployment specific values
-                    # this is a one-off for the broker, but needs to be generalized if/when another app needs it
-                    If ($configMap.Name -eq "mqtt-broker-config"){
-                        $configFile = "$configPath\mosquitto.conf"
-                        $update     = (Get-Content $configFile -Raw)
-                        $update     = $update -replace "Ag-IotHub-\w*", $iotHubName
-
-                        foreach ($device in $site.IoTDevices) {
-                            $deviceId = "$device-$($site.FriendlyName)"
-                            $deviceSASToken = $(az iot hub generate-sas-token --device-id $deviceId --hub-name $iotHubName --resource-group $resourceGroup --duration (60 * 60 * 24 * 30) --query sas -o tsv --only-show-errors)
-                            $update = $update -replace "Chicago", $site.FriendlyName
-                            $update = $update -replace "SharedAccessSignature.*$($device).*",$deviceSASToken
-                        }
-
-                        $update | Set-Content $configFile
-                    }
 
                     # create the namespace if needed
                     If (-not (kubectl get namespace $namespace --context $siteName)){
